@@ -12,9 +12,12 @@ import Text.Megaparsec.Error
 import Parser 
 import System.IO (hFlush, stdout)
 
+import System.Random 
+
 data TicTacToeGame = TicTacToeGame 
                    {game        :: TicTacToe
                    ,playerShape :: Maybe Mark 
+                   ,enemyShape  :: Maybe Mark 
                    }
                    deriving (Eq)
 data TicTacToe = TicTacToe
@@ -22,6 +25,9 @@ data TicTacToe = TicTacToe
                ,rowTwo   ::   (Maybe Mark,Maybe Mark,Maybe Mark)
                ,rowThree ::   (Maybe Mark,Maybe Mark,Maybe Mark)
                } deriving (Eq)
+
+newtype NPC = NPC Control deriving (Eq)
+
 instance Show TicTacToe where 
     show tictac = 
         let f maybemark  = if maybemark == Nothing then " " else show $ fromJust maybemark
@@ -96,7 +102,8 @@ playGame = do
             lift $ putStrLn $ errorBundlePretty e 
             playGame 
         Right control -> 
-            put (updateGameWithControl control tic)
+            put (updateGameWithControl (Left control) tic)
+    playNPC
     maybeWinner <- winnerTestT 
     newtic <- get 
     case maybeWinner of 
@@ -104,6 +111,17 @@ playGame = do
         (Just shape)-> do 
             lift $ putStrLn $ show $ (game newtic)
             lift $ putStrLn $ (show shape) ++ " wins"
+
+playNPC :: StateT TicTacToeGame IO ()
+playNPC = do 
+  (rownum',columnnum') <- lift $ do  
+       s <- newStdGen
+       let (rownum, newgen)     = randomR (1 :: Int8 ,3 :: Int8) s 
+           (columnnum, newgen') = randomR (1 :: Int8 ,3 :: Int8) newgen
+       return (rownum,columnnum)
+  tic <- get 
+  put (updateGameWithControl (Right $ NPC (Control (Row rownum') (Column columnnum'))) tic)
+
 chooseShape :: StateT TicTacToeGame IO () 
 chooseShape = do 
     lift $ putStr "Enter shape(ex; circle or x): "
@@ -111,33 +129,45 @@ chooseShape = do
     shape <- lift $ getLine 
     case shape of 
         "circle" -> do 
-            put (TicTacToeGame {game = initialGame, playerShape = Just O})
+            put (TicTacToeGame {game = initialGame, playerShape = Just O, enemyShape = Just X})
         "x"      -> do 
-            put (TicTacToeGame {game = initialGame, playerShape = Just X})
+            put (TicTacToeGame {game = initialGame, playerShape = Just X, enemyShape = Just O})
         _  -> do 
             lift $ putStrLn "Invalid choice, please try again."
             chooseShape 
 
-updateGameWithControl :: Control -> TicTacToeGame -> TicTacToeGame
-updateGameWithControl control (TicTacToeGame {game = g, playerShape = js})= 
+updateGameWithControl :: Either Control NPC -> TicTacToeGame -> TicTacToeGame
+updateGameWithControl control (TicTacToeGame {game = g, playerShape = js, enemyShape = es})= 
     case control of 
-        (Control (Row r) (Column c)) -> 
-            case r of 
-                1 -> TicTacToeGame {game = g {rowOne = updateColumn c js (rowOne g)}, playerShape = js}
-                2 -> TicTacToeGame {game = g {rowTwo = updateColumn c js (rowTwo g)}, playerShape = js}
-                3 -> TicTacToeGame {game = g {rowThree = updateColumn c js (rowThree g)}, playerShape = js}
-                _ -> TicTacToeGame {game =g, playerShape = js}
+        Left c -> case c of 
+                   (Control (Row r) (Column c)) -> 
+                       case r of 
+                        1 -> TicTacToeGame {game = g {rowOne = updateColumn c js (rowOne g)}, playerShape = js, enemyShape = es}
+                        2 -> TicTacToeGame {game = g {rowTwo = updateColumn c js (rowTwo g)}, playerShape = js, enemyShape = es}
+                        3 -> TicTacToeGame {game = g {rowThree = updateColumn c js (rowThree g)}, playerShape = js, enemyShape = es}
+                        _ -> TicTacToeGame {game =g, playerShape = js, enemyShape = es}
+        Right (NPC c') -> case c' of 
+                   (Control (Row r) (Column c)) -> 
+                       case r of 
+                        1 -> TicTacToeGame {game = g {rowOne = updateColumn c es (rowOne g)}, playerShape = js, enemyShape = es}
+                        2 -> TicTacToeGame {game = g {rowTwo = updateColumn c es (rowTwo g)}, playerShape = js, enemyShape = es}
+                        3 -> TicTacToeGame {game = g {rowThree = updateColumn c es (rowThree g)}, playerShape = js, enemyShape = es}
+                        _ -> TicTacToeGame {game =g, playerShape = js, enemyShape = es}
+                          
             
 updateColumn :: Int8 -> Maybe Mark -> (Maybe Mark, Maybe Mark, Maybe Mark ) -> (Maybe Mark, Maybe Mark, Maybe Mark)
 updateColumn num jm (m1,m2,m3) = 
     case num of 
-        1 -> (jm,m2,m3)
-        2 -> (m1,jm,m3)
-        3 -> (m1,m2,jm)
+        1 -> 
+         if m1 == Nothing then (jm,m2,m3) else (m1,m2,m3)
+        2 -> 
+         if m2 == Nothing then (m1,jm,m3) else (m1,m2,m3)
+        3 -> 
+         if m3 == Nothing then (m1,m2,jm) else (m1,m2,m3)
         _  -> (m1,m2,m3)
 
 main :: IO ()
 main = do 
     putStrLn "Tic-Tac-Toe Game by Alec"
-    evalStateT (chooseShape >> playGame) (TicTacToeGame {game = initialGame, playerShape = Nothing})
+    evalStateT (chooseShape >> playGame) (TicTacToeGame {game = initialGame, playerShape = Nothing, enemyShape = Nothing})
     putStrLn "Game over"
