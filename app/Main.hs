@@ -7,12 +7,11 @@ import Control.Applicative
 import Control.Monad.Trans.Class
 
 import Data.Maybe (fromJust)
-import Data.Int (Int8 (..)) -- small is what we need
+import Data.Int (Int8) -- small is what we need
 import Text.Megaparsec.Error 
 import Parser 
 import System.IO (hFlush, stdout)
 
-import Data.List (null)
 import System.Random 
 
 data TicTacToeGame = TicTacToeGame 
