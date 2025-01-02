@@ -12,6 +12,7 @@ import Text.Megaparsec.Error
 import Parser 
 import System.IO (hFlush, stdout)
 
+import Data.List (null)
 import System.Random 
 
 data TicTacToeGame = TicTacToeGame 
@@ -27,6 +28,7 @@ data TicTacToe = TicTacToe
                } deriving (Eq)
 
 newtype NPC = NPC Control deriving (Eq)
+data SpotStatus = NoSpots | Spots deriving (Eq)
 
 instance Show TicTacToe where 
     show tictac = 
@@ -103,24 +105,47 @@ playGame = do
             playGame 
         Right control -> 
             put (updateGameWithControl (Left control) tic)
-    playNPC
-    maybeWinner <- winnerTestT 
-    newtic <- get 
-    case maybeWinner of 
-        Nothing     -> playGame 
-        (Just shape)-> do 
-            lift $ putStrLn $ show $ (game newtic)
-            lift $ putStrLn $ (show shape) ++ " wins"
+    spotstatus <- playNPC
+    case spotstatus of 
+        NoSpots -> lift $ putStrLn "Draw" 
+        Spots   -> do     
+          maybeWinner <- winnerTestT 
+          newtic <- get 
+          case maybeWinner of 
+           Nothing     -> playGame 
+           (Just shape)-> do 
+              lift $ putStrLn $ show $ (game newtic)
+              lift $ putStrLn $ (show shape) ++ " wins"
 
-playNPC :: StateT TicTacToeGame IO ()
+
+availableSpots :: (Maybe Mark, Maybe Mark, Maybe Mark) -> [Maybe Int8]
+availableSpots (x,y,z) = 
+    filter (/= Nothing) ((\t -> if (snd t) == Nothing then Just (fst t) else Nothing ) <$> [(1,x) , (2,y) , (3, z)])
+
+randomElem :: [a] -> IO a 
+randomElem list = do 
+    s <- newStdGen 
+    return ( list !! (fst (randomR (0, (length list) - 1) s)) )
+
+playNPC :: StateT TicTacToeGame IO SpotStatus
 playNPC = do 
-  (rownum',columnnum') <- lift $ do  
-       s <- newStdGen
-       let (rownum, newgen)     = randomR (1 :: Int8 ,3 :: Int8) s 
-           (columnnum, newgen') = randomR (1 :: Int8 ,3 :: Int8) newgen
-       return (rownum,columnnum)
   tic <- get 
-  put (updateGameWithControl (Right $ NPC (Control (Row rownum') (Column columnnum'))) tic)
+  let rowOneSpots   = fromJust <$> availableSpots (rowOne $ game $ tic) 
+      rowTwoSpots   = fromJust <$> availableSpots (rowTwo $ game $ tic)
+      rowThreeSpots = fromJust <$> availableSpots (rowThree $ game $ tic)
+      allSpots      = filter (/= Nothing) $ 
+                       [if null rowOneSpots then Nothing else   Just (1, rowOneSpots) 
+                       ,if null rowTwoSpots then Nothing else   Just (2, rowTwoSpots) 
+                       ,if null rowThreeSpots then Nothing else Just (3, rowThreeSpots)
+                       ] 
+      chosenOne     = randomElem (fromJust <$> allSpots)
+  case allSpots of 
+    [] -> return NoSpots 
+    _  -> do 
+           (row,columnOptions) <- lift $ chosenOne 
+           column              <- lift $ randomElem columnOptions 
+           put (updateGameWithControl (Right $ NPC (Control (Row row) (Column column))) tic)
+           return Spots 
 
 chooseShape :: StateT TicTacToeGame IO () 
 chooseShape = do 
@@ -140,11 +165,11 @@ updateGameWithControl :: Either Control NPC -> TicTacToeGame -> TicTacToeGame
 updateGameWithControl control (TicTacToeGame {game = g, playerShape = js, enemyShape = es})= 
     case control of 
         Left c -> case c of 
-                   (Control (Row r) (Column c)) -> 
+                   (Control (Row r) (Column c')) -> 
                        case r of 
-                        1 -> TicTacToeGame {game = g {rowOne = updateColumn c js (rowOne g)}, playerShape = js, enemyShape = es}
-                        2 -> TicTacToeGame {game = g {rowTwo = updateColumn c js (rowTwo g)}, playerShape = js, enemyShape = es}
-                        3 -> TicTacToeGame {game = g {rowThree = updateColumn c js (rowThree g)}, playerShape = js, enemyShape = es}
+                        1 -> TicTacToeGame {game = g {rowOne = updateColumn c' js (rowOne g)}, playerShape = js, enemyShape = es}
+                        2 -> TicTacToeGame {game = g {rowTwo = updateColumn c' js (rowTwo g)}, playerShape = js, enemyShape = es}
+                        3 -> TicTacToeGame {game = g {rowThree = updateColumn c' js (rowThree g)}, playerShape = js, enemyShape = es}
                         _ -> TicTacToeGame {game =g, playerShape = js, enemyShape = es}
         Right (NPC c') -> case c' of 
                    (Control (Row r) (Column c)) -> 
