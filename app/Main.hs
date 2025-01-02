@@ -98,22 +98,26 @@ playGame = do
     lift $ putStrLn $ show $ (game tic)
     lift $ putStr "Enter Move: "
     lift $ hFlush stdout 
-    move <- lift $ getLine 
-    case parseMove move of 
-        Left e -> do 
+    let allSpots = getAllSpots tic 
+    case allSpots of 
+        [] -> lift $ putStrLn "Draw"
+        _  -> do 
+         move <- lift $ getLine 
+         case parseMove move of 
+          Left e -> do 
             lift $ putStrLn $ errorBundlePretty e 
             playGame 
-        Right control -> 
+          Right control -> 
             put (updateGameWithControl (Left control) tic)
-    spotstatus <- playNPC
-    case spotstatus of 
-        NoSpots -> lift $ putStrLn "Draw" 
-        Spots   -> do     
-          maybeWinner <- winnerTestT 
-          newtic <- get 
-          case maybeWinner of 
-           Nothing     -> playGame 
-           (Just shape)-> do 
+         spotstatus <- playNPC
+         case spotstatus of 
+          NoSpots -> lift $ putStrLn "Draw" 
+          Spots   -> do     
+           maybeWinner <- winnerTestT 
+           newtic <- get 
+           case maybeWinner of 
+            Nothing     -> playGame 
+            (Just shape)-> do 
               lift $ putStrLn $ show $ (game newtic)
               lift $ putStrLn $ (show shape) ++ " wins"
 
@@ -127,17 +131,22 @@ randomElem list = do
     s <- newStdGen 
     return ( list !! (fst (randomR (0, (length list) - 1) s)) )
 
+getAllSpots :: TicTacToeGame -> [Maybe (Int8,[Int8])]
+getAllSpots tic =  do 
+      let rowOneSpots   = fromJust <$> availableSpots (rowOne $ game $ tic) 
+          rowTwoSpots       = fromJust <$> availableSpots (rowTwo $ game $ tic)
+          rowThreeSpots     = fromJust <$> availableSpots (rowThree $ game $ tic)
+          allSpots          = filter (/= Nothing) $ 
+                               [if null rowOneSpots then Nothing else   Just (1, rowOneSpots) 
+                               ,if null rowTwoSpots then Nothing else   Just (2, rowTwoSpots) 
+                               ,if null rowThreeSpots then Nothing else Just (3, rowThreeSpots)
+                               ] 
+      allSpots 
+
 playNPC :: StateT TicTacToeGame IO SpotStatus
 playNPC = do 
   tic <- get 
-  let rowOneSpots   = fromJust <$> availableSpots (rowOne $ game $ tic) 
-      rowTwoSpots   = fromJust <$> availableSpots (rowTwo $ game $ tic)
-      rowThreeSpots = fromJust <$> availableSpots (rowThree $ game $ tic)
-      allSpots      = filter (/= Nothing) $ 
-                       [if null rowOneSpots then Nothing else   Just (1, rowOneSpots) 
-                       ,if null rowTwoSpots then Nothing else   Just (2, rowTwoSpots) 
-                       ,if null rowThreeSpots then Nothing else Just (3, rowThreeSpots)
-                       ] 
+  let allSpots      = getAllSpots tic 
       chosenOne     = randomElem (fromJust <$> allSpots)
   case allSpots of 
     [] -> return NoSpots 
